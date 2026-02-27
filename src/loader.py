@@ -32,7 +32,7 @@ _COLUMN_MAP = {
     "created_at": "created_at",
 }
 
-_REQUIRED_COLUMNS = ["id", "subject", "description", "category", "agent", "status", "created_at"]
+_REQUIRED_COLUMNS = ["id", "subject", "description", "conversations", "category", "agent", "status", "created_at"]
 
 
 def _extract_conversations(ticket: dict) -> str:
