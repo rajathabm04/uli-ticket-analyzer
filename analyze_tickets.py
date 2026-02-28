@@ -15,6 +15,7 @@ from rich.table import Table
 from src.freshdesk import FreshdeskClient
 from src.loader import load_tickets
 from src.categorizer import categorize_all
+from src.mismatch import find_mismatches, mismatch_rate
 
 load_dotenv()
 
@@ -81,6 +82,30 @@ def main() -> None:
         breakdown = df["category"].value_counts()
         for cat, count in breakdown.items():
             console.print(f"  {cat or '(unset)'}: {count}")
+
+    # Mismatch report
+    mismatches = find_mismatches(df)
+    rate = mismatch_rate(df)
+    console.print(f"\n[bold]Mismatch report:[/bold] {len(mismatches)} / {len(df)} tickets miscategorised ({rate:.0%})")
+
+    if not mismatches.empty:
+        mismatch_table = Table(title="Miscategorised Tickets", show_lines=True)
+        mismatch_table.add_column("ID", style="dim", no_wrap=True)
+        mismatch_table.add_column("Subject", max_width=40)
+        mismatch_table.add_column("Assigned", style="red")
+        mismatch_table.add_column("Inferred", style="green")
+        mismatch_table.add_column("Agent")
+
+        for _, row in mismatches.iterrows():
+            mismatch_table.add_row(
+                str(row["id"]),
+                str(row["subject"]),
+                str(row["assigned_category"]),
+                str(row["inferred_category"]),
+                str(row["agent"]),
+            )
+
+        console.print(mismatch_table)
 
 
 if __name__ == "__main__":
