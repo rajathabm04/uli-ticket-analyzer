@@ -14,6 +14,7 @@ from rich.table import Table
 
 from src.freshdesk import FreshdeskClient
 from src.loader import load_tickets
+from src.categorizer import categorize_all
 
 load_dotenv()
 
@@ -43,20 +44,28 @@ def main() -> None:
 
     console.print(f"\n[green]Loaded {len(df)} tickets.[/green]\n")
 
+    df = categorize_all(df, anthropic_client)
+    console.print(f"[green]Categorization complete.[/green]\n")
+
     # Summary table
     table = Table(title="Ticket Summary (sample — masked)", show_lines=True)
     table.add_column("ID", style="dim", no_wrap=True)
     table.add_column("Subject", max_width=40)
-    table.add_column("Category")
+    table.add_column("Assigned Category")
+    table.add_column("Inferred Category")
     table.add_column("Status")
     table.add_column("Description (snippet)", max_width=50)
 
     for _, row in df.head(10).iterrows():
+        assigned = str(row["category"])
+        inferred = str(row["inferred_category"])
+        inferred_display = f"[red]{inferred}[/red]" if inferred != assigned else inferred
         desc_snippet = str(row["description"])[:120].replace("\n", " ")
         table.add_row(
             str(row["id"]),
             str(row["subject"]),
-            str(row["category"]),
+            assigned,
+            inferred_display,
             str(row["status"]),
             desc_snippet,
         )
