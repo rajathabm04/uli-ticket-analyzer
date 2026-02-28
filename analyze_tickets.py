@@ -16,6 +16,7 @@ from src.freshdesk import FreshdeskClient
 from src.loader import load_tickets
 from src.categorizer import categorize_all
 from src.mismatch import find_mismatches, mismatch_rate
+from src.agent_audit import summarise_by_agent, error_patterns
 
 load_dotenv()
 
@@ -106,6 +107,33 @@ def main() -> None:
             )
 
         console.print(mismatch_table)
+
+    # Agent audit
+    agent_summary = summarise_by_agent(mismatches)
+    if not agent_summary.empty:
+        console.print("\n[bold]Agent audit — mismatch counts:[/bold]")
+        audit_table = Table(show_lines=True)
+        audit_table.add_column("Agent")
+        audit_table.add_column("Mismatches", justify="right")
+        for _, row in agent_summary.iterrows():
+            audit_table.add_row(str(row["agent"]), str(row["mismatch_count"]))
+        console.print(audit_table)
+
+        patterns = error_patterns(mismatches)
+        console.print("\n[bold]Agent audit — error patterns:[/bold]")
+        pattern_table = Table(show_lines=True)
+        pattern_table.add_column("Agent")
+        pattern_table.add_column("Assigned", style="red")
+        pattern_table.add_column("Should be", style="green")
+        pattern_table.add_column("Count", justify="right")
+        for _, row in patterns.iterrows():
+            pattern_table.add_row(
+                str(row["agent"]),
+                str(row["assigned_category"]),
+                str(row["inferred_category"]),
+                str(row["count"]),
+            )
+        console.print(pattern_table)
 
 
 if __name__ == "__main__":
