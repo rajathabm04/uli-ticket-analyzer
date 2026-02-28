@@ -59,18 +59,36 @@ _LABEL_MAP = {
     "ORG": "[ORG_NAME]",
 }
 
+_CHUNK_SIZE = 80_000  # chars per spaCy pass (well under the 1M default limit)
+
 
 def _ner_mask(text: str) -> str:
-    """Use spaCy to redact PERSON and ORG entities from already regex-masked text."""
+    """Use spaCy to redact PERSON and ORG entities from already regex-masked text.
+
+    Long texts are split into chunks so they stay within spaCy's max_length.
+    Entity offsets are translated back to absolute positions before replacement.
+    """
     if not text or not text.strip():
         return text
 
-    doc = _nlp(text)
-    # Iterate in reverse order to preserve char offsets during replacement
-    for ent in reversed(doc.ents):
-        token = _LABEL_MAP.get(ent.label_)
-        if token:
-            text = text[: ent.start_char] + token + text[ent.end_char :]
+    # Collect (abs_start, abs_end, replacement_token) across all chunks
+    replacements = []
+    for chunk_start in range(0, len(text), _CHUNK_SIZE):
+        chunk = text[chunk_start: chunk_start + _CHUNK_SIZE]
+        doc = _nlp(chunk)
+        for ent in doc.ents:
+            token = _LABEL_MAP.get(ent.label_)
+            if token:
+                replacements.append((
+                    chunk_start + ent.start_char,
+                    chunk_start + ent.end_char,
+                    token,
+                ))
+
+    # Replace in reverse order to preserve offsets
+    for start, end, token in sorted(replacements, key=lambda x: x[0], reverse=True):
+        text = text[:start] + token + text[end:]
+
     return text
 
 

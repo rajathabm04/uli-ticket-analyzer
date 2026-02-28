@@ -6,6 +6,8 @@ to Claude with a fixed list of ULI-specific categories. Claude returns exactly
 one category name; unrecognised responses fall back to "Other".
 """
 
+import time
+
 import anthropic
 import pandas as pd
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
@@ -61,12 +63,21 @@ def categorize_ticket(ticket: dict, client: anthropic.Anthropic) -> str:
     if conversations:
         content += f"\n\nConversation:\n{conversations}"
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=32,
-        system=_SYSTEM,
-        messages=[{"role": "user", "content": content}],
-    )
+    # Retry with exponential backoff on rate limit errors.
+    # Rate limit window is 60 s, so each wait must exceed that.
+    for attempt in range(5):
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=32,
+                system=_SYSTEM,
+                messages=[{"role": "user", "content": content}],
+            )
+            break
+        except anthropic.RateLimitError:
+            if attempt == 4:
+                raise
+            time.sleep(60 * (attempt + 1))  # 60 s, 120 s, 180 s, 240 s
 
     raw = response.content[0].text.strip()
 
@@ -102,6 +113,7 @@ def categorize_all(df: pd.DataFrame, client: anthropic.Anthropic) -> pd.DataFram
         for _, row in df.iterrows():
             inferred.append(categorize_ticket(row.to_dict(), client))
             progress.advance(task)
+            time.sleep(2)  # stay within 30k input-token/min rate limit
 
     df["inferred_category"] = inferred
     return df
