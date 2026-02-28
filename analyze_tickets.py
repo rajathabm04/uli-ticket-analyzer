@@ -18,6 +18,7 @@ from src.categorizer import categorize_all
 from src.mismatch import find_mismatches, mismatch_rate
 from src.agent_audit import summarise_by_agent, error_patterns
 from src.clusterer import cluster_tickets, cluster_summaries
+from src.kb_generator import generate_kb_articles
 
 load_dotenv()
 
@@ -153,6 +154,25 @@ def main() -> None:
             str(row["top_terms"]),
         )
     console.print(cluster_table)
+
+    # KB generation
+    console.print("\n[bold]Generating KB articles...[/bold]")
+    articles = generate_kb_articles(df, summaries, anthropic_client)
+    console.print(f"[green]Generated {len(articles) * 2} articles ({len(articles)} internal + {len(articles)} lender-facing).[/green]\n")
+
+    kb_table = Table(title="KB Articles Written", show_lines=True)
+    kb_table.add_column("Cluster", justify="right", style="dim")
+    kb_table.add_column("Size", justify="right")
+    kb_table.add_column("Internal article")
+    kb_table.add_column("Lender article")
+    for a in articles:
+        kb_table.add_row(
+            str(a["cluster"]),
+            str(a["size"]),
+            a["internal_path"],
+            a["lender_path"],
+        )
+    console.print(kb_table)
 
 
 if __name__ == "__main__":
