@@ -61,14 +61,14 @@ def categorize_ticket(ticket: dict, client: anthropic.Anthropic) -> str:
 
     content = f"Subject: {subject}\n\nDescription:\n{description}"
     if conversations:
-        content += f"\n\nConversation:\n{conversations}"
+        content += f"\n\nConversation (excerpt):\n{str(conversations)[:500]}"
 
     # Retry with exponential backoff on rate limit errors.
     # Rate limit window is 60 s, so each wait must exceed that.
     for attempt in range(5):
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=32,
                 system=_SYSTEM,
                 messages=[{"role": "user", "content": content}],
@@ -113,7 +113,6 @@ def categorize_all(df: pd.DataFrame, client: anthropic.Anthropic) -> pd.DataFram
         for _, row in df.iterrows():
             inferred.append(categorize_ticket(row.to_dict(), client))
             progress.advance(task)
-            time.sleep(2)  # stay within 30k input-token/min rate limit
 
     df["inferred_category"] = inferred
     return df
