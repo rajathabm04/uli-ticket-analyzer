@@ -17,6 +17,7 @@ from src.loader import load_tickets
 from src.categorizer import categorize_all
 from src.mismatch import find_mismatches, mismatch_rate
 from src.agent_audit import summarise_by_agent, error_patterns
+from src.clusterer import cluster_tickets, cluster_summaries
 
 load_dotenv()
 
@@ -134,6 +135,24 @@ def main() -> None:
                 str(row["count"]),
             )
         console.print(pattern_table)
+
+    # Clustering
+    console.print("\n[bold]Clustering tickets by recurring issue...[/bold]")
+    df = cluster_tickets(df)
+    summaries = cluster_summaries(df)
+    console.print(f"[green]Found {len(summaries)} clusters.[/green]\n")
+
+    cluster_table = Table(title="Ticket Clusters", show_lines=True)
+    cluster_table.add_column("Cluster", justify="right", style="dim")
+    cluster_table.add_column("Size", justify="right")
+    cluster_table.add_column("Top Terms", max_width=60)
+    for _, row in summaries.iterrows():
+        cluster_table.add_row(
+            str(row["cluster"]),
+            str(row["size"]),
+            str(row["top_terms"]),
+        )
+    console.print(cluster_table)
 
 
 if __name__ == "__main__":
