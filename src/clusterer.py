@@ -5,18 +5,45 @@ Produces a 'cluster' label per ticket and per-cluster summaries
 (size + top TF-IDF terms) for passing to the KB generator.
 """
 
+import re
+
 import pandas as pd
 from sklearn.cluster import KMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
+
+
+# Strip PII placeholder tokens inserted by pii_masker before TF-IDF sees them.
+# Otherwise [ORG_NAME], [PERSON_NAME] etc. dominate every cluster's top terms.
+_PII_RE = re.compile(
+    r'\[(ORG_NAME|PERSON_NAME|EMAIL|PHONE|PAN|AADHAAR|BANK_ACCOUNT|IFSC|IP_ADDRESS)\]',
+    re.IGNORECASE,
+)
+
+# Extra stop words beyond sklearn's English list: email/URL fragments and
+# Freshdesk boilerplate that carry no issue-specific signal.
+_EXTRA_STOP_WORDS: frozenset[str] = frozenset({
+    "https", "http", "www", "mailto", "com", "net", "org", "co",
+    "regards", "dear", "hello", "hi", "thanks", "thank",
+    "intended", "recipient", "confidential",
+    "ticket", "id", "sr", "re", "fw", "fwd",
+})
+
+_STOP_WORDS: list[str] = sorted(frozenset(ENGLISH_STOP_WORDS) | _EXTRA_STOP_WORDS)
+
+
+def _clean(text: str) -> str:
+    """Strip PII mask tokens so they don't pollute TF-IDF feature space."""
+    return _PII_RE.sub(" ", text)
 
 
 def _build_corpus(df: pd.DataFrame) -> list[str]:
     """Combine subject, description, and conversations into one string per ticket."""
-    return (
+    raw = (
         df["subject"].fillna("") + " " +
         df["description"].fillna("") + " " +
         df["conversations"].fillna("")
-    ).str.strip().tolist()
+    ).str.strip()
+    return [_clean(t) for t in raw.tolist()]
 
 
 def cluster_tickets(df: pd.DataFrame, n_clusters: int = 8) -> pd.DataFrame:
@@ -42,7 +69,7 @@ def cluster_tickets(df: pd.DataFrame, n_clusters: int = 8) -> pd.DataFrame:
     n = min(n_clusters, len(df))
     corpus = _build_corpus(df)
 
-    vectorizer = TfidfVectorizer(stop_words="english", max_features=5_000)
+    vectorizer = TfidfVectorizer(stop_words=_STOP_WORDS, max_features=5_000)
     try:
         X = vectorizer.fit_transform(corpus)
     except ValueError:
@@ -86,7 +113,7 @@ def cluster_summaries(df: pd.DataFrame, n_terms: int = 10) -> pd.DataFrame:
     rows = []
     for cluster_id, group in df.groupby("cluster"):
         corpus = _build_corpus(group)
-        vectorizer = TfidfVectorizer(stop_words="english", max_features=1_000)
+        vectorizer = TfidfVectorizer(stop_words=_STOP_WORDS, max_features=1_000)
         try:
             X = vectorizer.fit_transform(corpus)
             scores = X.sum(axis=0).A1

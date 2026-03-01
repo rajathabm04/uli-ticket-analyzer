@@ -6,6 +6,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.auth import HTTPBasicAuth
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from typing import Optional
 
 
 _CONVERSATION_WORKERS = 10   # parallel threads for conversation fetching
@@ -40,10 +41,13 @@ class FreshdeskClient:
         # 404 means no conversations; any other error surfaces as empty
         return []
 
-    def fetch_all_tickets(self) -> list[dict]:
+    def fetch_all_tickets(self, max_tickets: Optional[int] = None) -> list[dict]:
         """
         Paginates through all tickets with descriptions, then attaches
         conversations in parallel via per-ticket API calls.
+
+        Args:
+            max_tickets: If set, stop after collecting this many tickets.
 
         Returns:
             List of raw ticket dicts from the Freshdesk API, each with a
@@ -69,6 +73,10 @@ class FreshdeskClient:
                 break
 
             tickets.extend(batch)
+
+            if max_tickets and len(tickets) >= max_tickets:
+                tickets = tickets[:max_tickets]
+                break
 
             if len(batch) < 100:
                 break

@@ -4,6 +4,7 @@ Loads tickets from the Freshdesk API, masks PII, and returns a normalised DataFr
 
 import anthropic
 import pandas as pd
+from typing import Optional
 
 from src.freshdesk import FreshdeskClient
 from src.pii_masker import mask_all_tickets  # no longer needs anthropic_client
@@ -72,7 +73,11 @@ def _normalise(tickets: list[dict]) -> pd.DataFrame:
     return df[["id", "subject", "description", "conversations", "category", "agent", "status", "created_at"]]
 
 
-def load_tickets(freshdesk: FreshdeskClient, anthropic_client: anthropic.Anthropic) -> pd.DataFrame:
+def load_tickets(
+    freshdesk: FreshdeskClient,
+    anthropic_client: anthropic.Anthropic,
+    sample: Optional[int] = None,
+) -> pd.DataFrame:
     """
     Fetch all tickets from Freshdesk, mask PII, and return a normalised DataFrame.
 
@@ -80,11 +85,12 @@ def load_tickets(freshdesk: FreshdeskClient, anthropic_client: anthropic.Anthrop
         freshdesk: Initialised FreshdeskClient.
         anthropic_client: Initialised anthropic.Anthropic client (used by downstream
             categorizer/kb_generator — not forwarded to the masker).
+        sample: If set, fetch and process only this many tickets.
 
     Returns:
         DataFrame with columns: id, subject, description, conversations,
         category, agent, status, created_at.
     """
-    raw_tickets = freshdesk.fetch_all_tickets()
+    raw_tickets = freshdesk.fetch_all_tickets(max_tickets=sample)
     masked_tickets = mask_all_tickets(raw_tickets)
     return _normalise(masked_tickets)

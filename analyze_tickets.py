@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 ULI Ticket Analyzer — entry point.
-Usage: python analyze_tickets.py
+Usage: python analyze_tickets.py [--sample N]
 """
 
+import argparse
 import os
 import sys
 
@@ -34,6 +35,11 @@ def _get_env(name: str) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="ULI Ticket Analyzer")
+    parser.add_argument("--sample", type=int, default=None, metavar="N",
+                        help="Process only the first N tickets (for quick testing)")
+    args = parser.parse_args()
+
     anthropic_api_key = _get_env("ANTHROPIC_API_KEY")
     freshdesk_domain = _get_env("FRESHDESK_DOMAIN")
     freshdesk_api_key = _get_env("FRESHDESK_API_KEY")
@@ -42,9 +48,11 @@ def main() -> None:
     freshdesk_client = FreshdeskClient(domain=freshdesk_domain, api_key=freshdesk_api_key)
 
     console.print("[bold]ULI Ticket Analyzer[/bold]")
+    if args.sample:
+        console.print(f"[yellow]Sample mode: processing first {args.sample} tickets only.[/yellow]")
     console.print(f"Fetching tickets from [cyan]{freshdesk_domain}.freshdesk.com[/cyan]...\n")
 
-    df = load_tickets(freshdesk_client, anthropic_client)
+    df = load_tickets(freshdesk_client, anthropic_client, sample=args.sample)
 
     console.print(f"\n[green]Loaded {len(df)} tickets.[/green]\n")
 
