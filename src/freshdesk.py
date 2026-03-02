@@ -41,6 +41,37 @@ class FreshdeskClient:
         # 404 means no conversations; any other error surfaces as empty
         return []
 
+    def fetch_agents(self) -> dict[int, str]:
+        """
+        Return a mapping of agent ID → display name by calling GET /agents.
+
+        Paginates until all agents are fetched (typically a small set).
+        Falls back to the string representation of the ID on any error.
+        """
+        agent_map: dict[int, str] = {}
+        page = 1
+        while True:
+            try:
+                response = requests.get(
+                    f"{self.base_url}/agents",
+                    auth=self.auth,
+                    params={"per_page": 100, "page": page},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                batch = response.json()
+            except Exception:
+                break
+            if not batch:
+                break
+            for agent in batch:
+                name = agent.get("contact", {}).get("name") or str(agent["id"])
+                agent_map[agent["id"]] = name
+            if len(batch) < 100:
+                break
+            page += 1
+        return agent_map
+
     def fetch_all_tickets(self, max_tickets: Optional[int] = None) -> list[dict]:
         """
         Paginates through all tickets with descriptions, then attaches

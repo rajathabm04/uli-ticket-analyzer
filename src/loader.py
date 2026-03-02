@@ -57,17 +57,20 @@ def _extract_conversations(ticket: dict) -> str:
     return "\n---\n".join(parts)
 
 
-def _normalise(tickets: list[dict]) -> pd.DataFrame:
+def _normalise(tickets: list[dict], agent_map: Optional[dict[int, str]] = None) -> pd.DataFrame:
     """Convert list of masked ticket dicts to a normalised DataFrame."""
+    agent_map = agent_map or {}
     rows = []
     for t in tickets:
+        raw_agent = t.get("responder_id") or t.get("agent_name") or t.get("agent", "")
+        agent = agent_map.get(raw_agent, raw_agent) if isinstance(raw_agent, int) else raw_agent
         row = {
             "id": t.get("id"),
             "subject": t.get("subject", ""),
             "description": t.get("description_text") or t.get("description", ""),
             "conversations": _extract_conversations(t),
             "category": t.get("type") or t.get("category", ""),
-            "agent": t.get("responder_id") or t.get("agent_name") or t.get("agent", ""),
+            "agent": agent,
             "status": _STATUS_MAP.get(t.get("status"), t.get("status", "")),
             "created_at": t.get("created_at", ""),
         }
@@ -105,9 +108,10 @@ def load_tickets(
         DataFrame with columns: id, subject, description, conversations,
         category, agent, status, created_at.
     """
+    agent_map = freshdesk.fetch_agents()
     raw_tickets = freshdesk.fetch_all_tickets(max_tickets=sample)
     masked_tickets = mask_all_tickets(raw_tickets)
-    result = _normalise(masked_tickets)
+    result = _normalise(masked_tickets, agent_map=agent_map)
 
     if since or until:
         dates = pd.to_datetime(result["created_at"], utc=True, errors="coerce")
