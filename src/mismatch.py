@@ -37,7 +37,9 @@ def find_mismatches(df: pd.DataFrame) -> pd.DataFrame:
     assigned_norm = df["category"].fillna("").str.strip().str.lower()
     inferred_norm = df["inferred_category"].fillna("").str.strip().str.lower()
 
-    mismatch_mask = assigned_norm != inferred_norm
+    # Only flag tickets where the agent actually set a category AND it differs
+    # from the inferred one. Blank/unset assigned category is not a mismatch.
+    mismatch_mask = assigned_norm.ne("") & assigned_norm.ne(inferred_norm)
 
     result = (
         df[mismatch_mask][["id", "subject", "category", "inferred_category", "agent", "status", "created_at"]]

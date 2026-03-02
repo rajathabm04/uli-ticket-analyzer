@@ -22,7 +22,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # One-time: download the spaCy model used for local PII NER
-python -m spacy download en_core_web_lg
+python -m spacy download en_core_web_sm
 
 # Run the analyzer
 python analyze_tickets.py
@@ -58,7 +58,7 @@ FRESHDESK_API_KEY=your_fd_api_key
 
 - The sibling project `uli-yaml-generator/` uses the same `anthropic` SDK pattern: a single script calling `anthropic.Anthropic()` with `client.messages.create(...)`. Follow the same style.
 - Use `claude-sonnet-4-6` as the default model for categorization and KB generation.
-- PII NER masking uses spaCy `en_core_web_lg` (local model, zero data egress). Claude Haiku is no longer used for masking.
+- PII NER masking uses spaCy `en_core_web_sm` (local model, zero data egress). Claude Haiku is no longer used for masking.
 - Freshdesk API: auth is HTTP Basic with the API key as username and `"X"` as password.
 - Agent names are **not** masked (kept for the agent audit feature). Ticket ID, status, timestamps, and category label are also preserved.
 - All Claude prompts should be in `src/` modules, not in the entry point.

@@ -5,6 +5,7 @@ Produces a 'cluster' label per ticket and per-cluster summaries
 (size + top TF-IDF terms) for passing to the KB generator.
 """
 
+import html
 import re
 
 import pandas as pd
@@ -15,7 +16,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 # Strip PII placeholder tokens inserted by pii_masker before TF-IDF sees them.
 # Otherwise [ORG_NAME], [PERSON_NAME] etc. dominate every cluster's top terms.
 _PII_RE = re.compile(
-    r'\[(ORG_NAME|PERSON_NAME|EMAIL|PHONE|PAN|AADHAAR|BANK_ACCOUNT|IFSC|IP_ADDRESS)\]',
+    r'\[('
+    r'ORG_NAME|PERSON_NAME|EMAIL|PHONE|PAN|AADHAAR|BANK_ACCOUNT|IFSC|IP_ADDRESS'
+    r'|JWT_TOKEN|BEARER_TOKEN|CLIENT_ID|CLIENT_SECRET'
+    r'|SP_CLIENT_TOKEN|SP_CLIENT_ID|API_KEY|OAUTH_TOKEN'
+    r')\]',
     re.IGNORECASE,
 )
 
@@ -30,10 +35,16 @@ _EXTRA_STOP_WORDS: frozenset[str] = frozenset({
 
 _STOP_WORDS: list[str] = sorted(frozenset(ENGLISH_STOP_WORDS) | _EXTRA_STOP_WORDS)
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
+
 
 def _clean(text: str) -> str:
-    """Strip PII mask tokens so they don't pollute TF-IDF feature space."""
-    return _PII_RE.sub(" ", text)
+    """Strip HTML tags, decode entities, and remove PII mask tokens."""
+    text = _HTML_TAG_RE.sub(" ", text)          # <div>, <span style="...">, etc.
+    text = html.unescape(text)                   # &amp; &nbsp; &lt; &gt; &#39; …
+    text = _PII_RE.sub(" ", text)               # [PERSON_NAME], [EMAIL], etc.
+    return _WHITESPACE_RE.sub(" ", text).strip()
 
 
 def _build_corpus(df: pd.DataFrame) -> list[str]:

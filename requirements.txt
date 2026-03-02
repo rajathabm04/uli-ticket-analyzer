@@ -6,3 +6,4 @@ rich
 requests
 spacy
 pytest
+markdown

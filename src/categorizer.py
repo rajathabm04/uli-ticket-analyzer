@@ -1,12 +1,12 @@
 """
-Categorizer: uses Claude Sonnet to infer the correct support ticket category.
+Categorizer: keyword-based classifier for ULI support tickets.
 
-For each ticket, the subject, description, and conversation thread are sent
-to Claude with a fixed list of ULI-specific categories. Claude returns exactly
-one category name; unrecognised responses fall back to "Other".
+Scores each ticket against per-category keyword lists and returns the
+highest-scoring category. Falls back to "Other" when no keywords match.
+No API calls — runs entirely in-process.
 """
 
-import time
+import re
 
 import anthropic
 import pandas as pd
@@ -29,72 +29,116 @@ CATEGORIES: list[str] = [
     "Other",
 ]
 
-_SYSTEM = (
-    "You are a support ticket classifier for ULI (Unified Lending Interface), "
-    "a financial data-sharing platform that connects lenders (banks, NBFCs, fintechs) "
-    "with data providers.\n\n"
-    "Given a support ticket, respond with ONLY the single most appropriate category "
-    "from the list below — no explanation, no punctuation, just the category name "
-    "exactly as written:\n\n"
-    + "\n".join(f"- {c}" for c in CATEGORIES)
-)
+
+# ---------------------------------------------------------------------------
+# Keyword rules — ordered by specificity within each category
+# ---------------------------------------------------------------------------
+
+_KEYWORDS: dict[str, list[str]] = {
+    "API Error": [
+        "api error", "api failure", "api down", "api issue", "api not working",
+        "bad request", "internal server error", "invalid response", "response error",
+        "http 400", "http 500", "http 502", "http 503", "status 400", "status 500",
+        "error code", "error response", "request failed", "call failed",
+    ],
+    "Authentication / Authorisation": [
+        "authentication failed", "authorisation failed", "authorization failed",
+        "access denied", "access forbidden", "not authorized", "unauthorized",
+        "invalid token", "token expired", "token invalid", "invalid credentials",
+        "login failed", "cannot log in", "unable to login", "sign in failed",
+        "permission denied", "403", "401", "api key invalid", "api key expired",
+        "oauth", "jwt", "2fa", "otp", "credential", "password reset",
+    ],
+    "Onboarding": [
+        "onboarding", "onboard", "new registration", "account registration",
+        "account setup", "getting started", "initial setup", "new lender",
+        "new user", "first time", "kyc", "verification pending", "not yet activated",
+        "activation", "enroll", "sign up", "signup",
+    ],
+    "Integration": [
+        "integration issue", "integration error", "integration failure",
+        "webhook", "third-party", "third party", "partner system",
+        "data flow", "middleware", "sdk issue", "library", "incompatible",
+        "lender integration", "connecting to", "connection refused", "cannot connect",
+        "integrate with", "sync issue", "data sync",
+    ],
+    "Data Mismatch": [
+        "data mismatch", "mismatch", "discrepancy", "incorrect data",
+        "wrong data", "data inconsistency", "inconsistent data",
+        "does not match", "doesn't match", "different value",
+        "inaccurate", "incorrect value", "data quality", "wrong amount",
+        "wrong field", "data error", "field mismatch",
+    ],
+    "Performance / Latency": [
+        "slow response", "high latency", "response time", "timed out",
+        "timeout", "too slow", "performance issue", "performance degraded",
+        "throughput", "bottleneck", "lag", "delay", "sla breach",
+        "taking long", "takes too long", "very slow",
+    ],
+    "Configuration": [
+        "misconfigured", "misconfiguration", "wrong configuration",
+        "config error", "configuration issue", "configuration error",
+        "wrong setting", "incorrect setting", "parameter",
+        "environment variable", "env variable", "flag", "property value",
+        "needs to be configured", "not configured",
+    ],
+    "Documentation Request": [
+        "documentation", "where is the doc", "need docs", "need documentation",
+        "api reference", "swagger", "openapi", "api spec", "specification",
+        "how to", "howto", "tutorial", "guide", "example", "sample code",
+        "readme", "faq", "manual",
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
+# Scoring
+# ---------------------------------------------------------------------------
+
+def _score_ticket(text: str) -> dict[str, int]:
+    """Return a match count per category for the given text (lowercased)."""
+    lower = text.lower()
+    scores: dict[str, int] = {}
+    for cat, phrases in _KEYWORDS.items():
+        scores[cat] = sum(1 for phrase in phrases if phrase in lower)
+    return scores
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def categorize_ticket(ticket: dict, client: anthropic.Anthropic) -> str:
+def categorize_ticket(ticket: dict, client: anthropic.Anthropic) -> str:  # noqa: ARG001
     """
-    Infer the correct category for a single ticket dict.
+    Infer the correct category for a single ticket dict using keyword rules.
 
     Args:
         ticket: Dict with at least 'subject', 'description', 'conversations'.
-        client: Initialised anthropic.Anthropic client.
+        client: Unused — kept for API compatibility with the rest of the pipeline.
 
     Returns:
         One of the strings in CATEGORIES.
     """
-    subject = ticket.get("subject", "")
-    description = ticket.get("description", "")
-    conversations = ticket.get("conversations", "")
+    subject = str(ticket.get("subject", ""))
+    description = str(ticket.get("description", ""))
+    conversations = str(ticket.get("conversations", ""))[:500]
 
-    content = f"Subject: {subject}\n\nDescription:\n{description}"
-    if conversations:
-        content += f"\n\nConversation (excerpt):\n{str(conversations)[:500]}"
+    text = f"{subject}\n{description}\n{conversations}"
+    scores = _score_ticket(text)
 
-    # Retry with exponential backoff on rate limit errors.
-    # Rate limit window is 60 s, so each wait must exceed that.
-    for attempt in range(5):
-        try:
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=32,
-                system=_SYSTEM,
-                messages=[{"role": "user", "content": content}],
-            )
-            break
-        except anthropic.RateLimitError:
-            if attempt == 4:
-                raise
-            time.sleep(60 * (attempt + 1))  # 60 s, 120 s, 180 s, 240 s
-
-    raw = response.content[0].text.strip()
-
-    # Case-insensitive match against known categories; fall back to "Other"
-    for cat in CATEGORIES:
-        if cat.lower() == raw.lower():
-            return cat
-    return "Other"
+    best_cat = max(scores, key=lambda c: scores[c])
+    if scores[best_cat] == 0:
+        return "Other"
+    return best_cat
 
 
 def categorize_all(df: pd.DataFrame, client: anthropic.Anthropic) -> pd.DataFrame:
     """
-    Add an 'inferred_category' column to df by classifying each ticket with Claude.
+    Add an 'inferred_category' column to df by classifying each ticket.
 
     Args:
         df: DataFrame produced by loader.load_tickets().
-        client: Initialised anthropic.Anthropic client.
+        client: Unused — kept for API compatibility.
 
     Returns:
         New DataFrame with an additional 'inferred_category' column.

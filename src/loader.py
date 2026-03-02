@@ -35,6 +35,16 @@ _COLUMN_MAP = {
 
 _REQUIRED_COLUMNS = ["id", "subject", "description", "conversations", "category", "agent", "status", "created_at"]
 
+# Freshdesk numeric status codes → human-readable labels
+_STATUS_MAP: dict[int, str] = {
+    2: "open",
+    3: "pending",
+    4: "resolved",
+    5: "closed",
+    6: "waiting on customer",
+    7: "waiting on third party",
+}
+
 
 def _extract_conversations(ticket: dict) -> str:
     """Flatten conversation thread into a single string."""
@@ -58,7 +68,7 @@ def _normalise(tickets: list[dict]) -> pd.DataFrame:
             "conversations": _extract_conversations(t),
             "category": t.get("type") or t.get("category", ""),
             "agent": t.get("responder_id") or t.get("agent_name") or t.get("agent", ""),
-            "status": t.get("status", ""),
+            "status": _STATUS_MAP.get(t.get("status"), t.get("status", "")),
             "created_at": t.get("created_at", ""),
         }
         rows.append(row)
@@ -77,6 +87,8 @@ def load_tickets(
     freshdesk: FreshdeskClient,
     anthropic_client: anthropic.Anthropic,
     sample: Optional[int] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Fetch all tickets from Freshdesk, mask PII, and return a normalised DataFrame.
@@ -86,6 +98,8 @@ def load_tickets(
         anthropic_client: Initialised anthropic.Anthropic client (used by downstream
             categorizer/kb_generator — not forwarded to the masker).
         sample: If set, fetch and process only this many tickets.
+        since: ISO date string (YYYY-MM-DD). Keep tickets created on or after this date.
+        until: ISO date string (YYYY-MM-DD). Keep tickets created before this date.
 
     Returns:
         DataFrame with columns: id, subject, description, conversations,
@@ -93,4 +107,14 @@ def load_tickets(
     """
     raw_tickets = freshdesk.fetch_all_tickets(max_tickets=sample)
     masked_tickets = mask_all_tickets(raw_tickets)
-    return _normalise(masked_tickets)
+    result = _normalise(masked_tickets)
+
+    if since or until:
+        dates = pd.to_datetime(result["created_at"], utc=True, errors="coerce")
+        if since:
+            result = result[dates >= pd.Timestamp(since, tz="UTC")]
+        if until:
+            result = result[dates < pd.Timestamp(until, tz="UTC")]
+        result = result.reset_index(drop=True)
+
+    return result
