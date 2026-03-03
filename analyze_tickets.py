@@ -38,6 +38,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ULI Ticket Analyzer")
     parser.add_argument("--sample", type=int, default=None, metavar="N",
                         help="Process only the first N tickets (for quick testing)")
+    parser.add_argument("--clusters", type=int, default=20, metavar="N",
+                        help="Number of clusters for KB generation (default: 20)")
     args = parser.parse_args()
 
     anthropic_api_key = _get_env("ANTHROPIC_API_KEY")
@@ -147,7 +149,7 @@ def main() -> None:
 
     # Clustering
     console.print("\n[bold]Clustering tickets by recurring issue...[/bold]")
-    df = cluster_tickets(df)
+    df = cluster_tickets(df, n_clusters=args.clusters)
     summaries = cluster_summaries(df)
     console.print(f"[green]Found {len(summaries)} clusters.[/green]\n")
 
